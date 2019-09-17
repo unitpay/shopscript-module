@@ -17,15 +17,23 @@ class unitpayPayment extends waPayment implements waIPayment
         $order = waOrder::factory($order_data);
 
         $public_key = $this->unit_public_key;
+        $secret_key = $this->unit_secret_key;
         $sum = $order->total;
         $account = $order->id;
         $desc = $order->description;
+        $signature = hash('sha256', join('{up}', array(
+            $account,
+            $desc,
+            $sum,
+            $secret_key
+        )));
 
         $view = wa()->getView();
         $view->assign('public_key', $public_key);
         $view->assign('sum', $sum);
         $view->assign('account', $account);
-        $view->assign('desc', $desc);
+        $view->assign('desc', urlencode($desc));
+        $view->assign('signature', $signature);
 
         return $view->fetch($this->path.'/templates/payment.html');
     }
