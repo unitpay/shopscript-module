@@ -5,7 +5,7 @@ return array(
     'icon'        => 'img/unitpay16.png',
     'logo'        => 'img/unitpay.png',
     'vendor'      => 'webasyst',
-    'version'     => '1.0.0',
+    'version'     => '1.0.1',
     'locale'      => array('ru_RU',),
     'type'        => waPayment::TYPE_ONLINE,
 );
