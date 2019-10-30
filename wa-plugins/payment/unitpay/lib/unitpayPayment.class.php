@@ -2,6 +2,10 @@
 
 class unitpayPayment extends waPayment implements waIPayment
 {
+    const DELIMITER = ':';
+
+    protected $order_id;
+
     public function allowedCurrency()
     {
         $default = array(
@@ -20,7 +24,7 @@ class unitpayPayment extends waPayment implements waIPayment
         $public_key = $this->unit_public_key;
         $secret_key = $this->unit_secret_key;
         $sum = $order->total;
-        $account = $order->id;
+        $account = $order->id . unitpayPayment::DELIMITER . $this->merchant_id;
         $desc = $order->description;
         $signature = hash('sha256', join('{up}', array(
             $account,
@@ -42,7 +46,7 @@ class unitpayPayment extends waPayment implements waIPayment
     protected function callbackInit($request)
     {
         $params = $request['params'];
-        $this->order_id = $params['account'];
+        list($this->order_id, $this->merchant_id) = explode( unitpayPayment::DELIMITER, $params['account'],2);
         return parent::callbackInit($request);
     }
 
@@ -100,7 +104,7 @@ class unitpayPayment extends waPayment implements waIPayment
 
         if (is_null($order_id)) {
             $result = array('error' =>
-                array('message' => '1заказа не существует')
+                array('message' => 'заказа не существует')
             );
         } elseif ((float)$order['total'] != (float)$params['orderSum']) {
             $result = array('error' =>
@@ -194,16 +198,10 @@ class unitpayPayment extends waPayment implements waIPayment
 
     public function verifySignature($params, $method)
     {
-        $settings_model = new shopPluginSettingsModel();
-        $plugin_model = new shopPluginModel();
-        $plugin = $plugin_model->getByField('plugin', $this->id);
-
-        $secret = $settings_model->get($plugin['id'], 'unit_secret_key');
-
-        return $params['signature'] == $this->getSignature($method, $params, $secret);
+        return $params['signature'] == $this->getSignature($this->unit_secret_key, $params, $method);
     }
 
-    public function getSignature($method, array $params, $secretKey)
+    public function getSignature($secretKey, array $params, $method)
     {
         ksort($params);
         unset($params['sign']);
