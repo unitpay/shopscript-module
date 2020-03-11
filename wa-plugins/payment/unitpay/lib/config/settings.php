@@ -1,6 +1,13 @@
 <?php
 
 return array(
+    'unit_domain' => array(
+        'value'        => '',
+        'title'        => 'DOMAIN',
+        'description'  => 'Вставьте ваш рабочий домен UnitPay',
+        'control_type' => 'input',
+        'class'        => 'keys',
+    ),
 	'unit_public_key' => array(
 		'value'        => '',
 		'title'        => 'PUBLIC KEY',
