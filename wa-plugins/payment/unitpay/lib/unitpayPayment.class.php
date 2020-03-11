@@ -21,6 +21,7 @@ class unitpayPayment extends waPayment implements waIPayment
         $result = null;
         $order = waOrder::factory($order_data);
 
+        $domain = $this->unit_domain;
         $public_key = $this->unit_public_key;
         $secret_key = $this->unit_secret_key;
         $sum = $order->total;
@@ -34,6 +35,7 @@ class unitpayPayment extends waPayment implements waIPayment
         )));
 
         $view = wa()->getView();
+        $view->assign('domain', $domain);
         $view->assign('public_key', $public_key);
         $view->assign('sum', $sum);
         $view->assign('account', $account);

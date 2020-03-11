@@ -1,7 +1,7 @@
 <?php
 return array(
     'name'        => 'Unitpay',
-    'description' => 'Платежная система <a href="https://unitpay.ru" target="_blank">Unitpay</a>',
+    'description' => 'Платежная система Unitpay',
     'icon'        => 'img/unitpay16.png',
     'logo'        => 'img/unitpay.png',
     'vendor'      => 1215100,
