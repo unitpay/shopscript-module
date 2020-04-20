@@ -5,7 +5,7 @@ return array(
     'icon'        => 'img/unitpay16.png',
     'logo'        => 'img/unitpay.png',
     'vendor'      => 1215100,
-    'version'     => '2.0.0',
+    'version'     => '2.0.1',
     'locale'      => array('ru_RU',),
     'type'        => waPayment::TYPE_ONLINE,
 );
