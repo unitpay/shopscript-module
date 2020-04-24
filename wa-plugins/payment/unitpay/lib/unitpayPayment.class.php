@@ -48,155 +48,76 @@ class unitpayPayment extends waPayment implements waIPayment
     protected function callbackInit($request)
     {
         $params = $request['params'];
-        list($this->order_id, $this->merchant_id) = explode( unitpayPayment::DELIMITER, $params['account'],2);
+        list($this->order_id, $this->merchant_id) = explode(unitpayPayment::DELIMITER, $params['account'], 2);
         return parent::callbackInit($request);
     }
 
     protected function callbackHandler($data)
     {
-        $method = '';
-        $params = [];
-
-        if ((isset($data['params'])) && (isset($data['method'])) && (isset($data['params']['signature']))) {
-            $params = $data['params'];
-            $method = $data['method'];
-            $signature = $params['signature'];
-
-            if (empty($signature)) {
-                $status_sign = false;
-            } else {
-                $status_sign = $this->verifySignature($params, $method);
-            }
-
-        } else {
-            $status_sign = false;
+        if (!isset($data['params']) || !isset($data['method']) || !isset($data['params']['signature'])) {
+            $result = array('error' => array('message' => 'Не переданы обязательные параметры запроса'));
+            return $this->returnJson($result);
         }
 
-        if ($status_sign) {
-            switch ($method) {
-                case 'check':
-                    $result = $this->check($params);
-                    break;
-                case 'pay':
-                    $result = $this->pay($params);
-                    break;
-                case 'error':
-                    $result = $this->error($params);
-                    break;
-                default:
-                    $result = array('error' =>
-                        array('message' => 'неверный метод')
-                    );
-                    break;
-            }
-        } else {
-            $result = array('error' =>
-                array('message' => 'неверная сигнатура')
-            );
+        $params = $data['params'];
+        $method = $data['method'];
+
+        if (!$this->verifySignature($params, $method)) {
+            $result = array('error' => array('message' => 'Неверная сигнатура'));
+            return $this->returnJson($result);
         }
 
-        $this->hardReturnJson($result);
-    }
-
-    public function check($params)
-    {
-        $order_model = new shopOrderModel();
-        $order_id = $this->order_id;
-        $order = $order_model->getById($order_id);
-
-        if (is_null($order_id)) {
-            $result = array('error' =>
-                array('message' => 'заказа не существует')
-            );
-        } elseif ((float)$order['total'] != (float)$params['orderSum']) {
-            $result = array('error' =>
-                array('message' => 'не совпадает сумма заказа')
-            );
-        } elseif ($order['currency'] != $params['orderCurrency']) {
-            $result = array('error' =>
-                array('message' => 'не совпадает валюта заказа')
-            );
-        } else {
-            $result = array('result' =>
-                array('message' => 'Запрос успешно обработан')
-            );
+        switch ($method) {
+            case 'check':
+                $result = array('result' => array('message' => 'Запрос успешно обработан'));
+                break;
+            case 'pay':
+                $result = $this->pay($params);
+                break;
+            case 'error':
+                $result = array('result' => array('message' => 'Произошла ошибка при обработке платежа'));
+                break;
+            default:
+                $result = array('error' => array('message' => 'Неверный метод'));
+                break;
         }
 
-        return $result;
+        return $this->returnJson($result);
     }
 
     public function pay($params)
     {
-        $order_model = new shopOrderModel();
-        $order_id = $this->order_id;
-        $order = $order_model->getById($order_id);
+        $transaction_data = $this->formalizeData($params);
 
-        if (is_null($order_id)) {
-            $result = array('error' =>
-                array('message' => 'заказа не существует')
-            );
-        } elseif ((float)$order['total'] != (float)$params['orderSum']) {
-            $result = array('error' =>
-                array('message' => 'не совпадает сумма заказа')
-            );
-        } elseif ($order['currency'] != $params['orderCurrency']) {
-            $result = array('error' =>
-                array('message' => 'не совпадает валюта заказа')
-            );
-        } else {
-            $update_order = [];
-            $update_order['state_id'] = 'paid';
-            $update_order = array_merge($update_order, [
-                'paid_date' => date('Y-m-d'),
-                'paid_year' => date('Y'),
-                'paid_quarter' => floor((date('m') - 1) / 3) + 1,
-                'paid_month' => (int)date('m'),
-            ]);
+        $transaction_data = $this->saveTransaction($transaction_data, $params);
 
-            $order_model->updateById($order_id, $update_order);
+        $result = $this->execAppCallback(self::CALLBACK_PAYMENT, $transaction_data);
 
-            $logs[] = array(
-                'order_id' => $order_id,
-                'action_id' => 'pay',
-                'before_state_id' => $order['state_id'],
-                'after_state_id' => $update_order['state_id'],
-                'text' => '',
-            );
-
-            #add log records
-            $log_model = new shopOrderLogModel();
-            foreach ($logs as $log) {
-                $log_model->add($log);
-            }
-
-            $result = array('result' =>
-                array('message' => 'Запрос успешно обработан')
-            );
+        if (empty($result['result'])) {
+            $message = !empty($result['error']) ? $result['error'] : 'wa transaction error';
+            return array('error' => array('message' => $message));
         }
 
-        return $result;
+        return array('result' => array('message' => 'Запрос успешно обработан'));
     }
 
-
-    public function error($params)
+    public function formalizeData($params)
     {
-        $order_model = new shopOrderModel();
-        $order_id = $this->order_id;
-        $order = $order_model->getById($order_id);
+        $transaction_data = parent::formalizeData($params);
+        $transaction_data['order_id'] = $this->order_id;
+        $transaction_data['amount'] = $params['sum'];
+        $transaction_data['native_id'] = $params['unitpayId'];
+        $transaction_data['type'] = self::OPERATION_CAPTURE;
+        $transaction_data['state'] = self::STATE_CAPTURED;
+        $transaction_data['currency_id'] = $params['orderCurrency'];
 
-        if (is_null($order['id'])) {
-            $result = array('error' =>
-                array('message' => 'заказа не существует')
-            );
-        } else {
-            $result = array('result' =>
-                array('message' => 'Запрос успешно обработан')
-            );
+        $isTest = ifempty($params['test']);
+        if ($isTest) {
+            $transaction_data['view_data'] = 'Тестовый режим';
         }
 
-        return $result;
+        return $transaction_data;
     }
-
 
     public function verifySignature($params, $method)
     {
@@ -214,10 +135,13 @@ class unitpayPayment extends waPayment implements waIPayment
         return hash('sha256', join('{up}', $params));
     }
 
-    protected function hardReturnJson($arr)
+    protected function returnJson($message)
     {
-        header('Content-Type: application/json');
-        $result = json_encode($arr);
-        die($result);
+        return array(
+            'header'  => array(
+                'Content-Type' => 'application/json'
+            ),
+            'message' => json_encode($message)
+        );
     }
 }
