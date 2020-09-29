@@ -34,6 +34,7 @@ class unitpayPayment extends waPayment implements waIPayment
             $secret_key
         )));
 
+
         $view = wa()->getView();
         $view->assign('domain', $domain);
         $view->assign('public_key', $public_key);
@@ -42,7 +43,34 @@ class unitpayPayment extends waPayment implements waIPayment
         $view->assign('desc', urlencode($desc));
         $view->assign('signature', $signature);
 
-        return $view->fetch($this->path . '/templates/payment.html');
+        $has_phone = $order->contact_phone && (strlen($order->contact_phone) > 0);
+        $has_email = $order->contact_email && (strlen($order->contact_email) > 0);
+
+        if ($has_phone) {
+            $contact_phone = preg_replace('/\D/', '', $order->contact_phone);
+            $view->assign('customerPhone', $contact_phone);
+        }
+
+        if ($has_email) {
+            $view->assign('customerEmail', $order->contact_email);
+        }
+
+        if ($has_phone || $has_email) {
+            $cashItems = $this->getCashItems($order);
+            $view->assign('cashItems', $cashItems);
+        }
+
+        if ($has_phone && !$has_email) {
+            $template = $this->path . '/templates/payment_with_phone.html';
+        } elseif (!$has_phone && $has_email) {
+            $template = $this->path . '/templates/payment_with_email.html';
+        } elseif ($has_phone && $has_email) {
+            $template = $this->path . '/templates/payment_with_both.html';
+        } else {
+            $template = $this->path . '/templates/payment.html';
+        }
+
+        return $view->fetch($template);
     }
 
     protected function callbackInit($request)
@@ -143,5 +171,46 @@ class unitpayPayment extends waPayment implements waIPayment
             ),
             'message' => json_encode($message)
         );
+    }
+
+    private function getCashItems($order)
+    {
+        $currencyCode = $order['currency'];
+
+        $orderProducts = array_map(function ($item) use ($currencyCode, $order) {
+            $vat = 'none';
+
+            if (isset($order['tax_included']) && $order['tax_included']) {
+                $vat = 'vat20';
+            }
+
+            return array(
+                'name'     => $item['name'],
+                'count'    => $item['quantity'],
+                'price'    => round($item['price'], 2),
+                'currency' => $currencyCode,
+                'type'     => 'commodity',
+                'nds'      => $vat,
+            );
+        }, $order['items']);
+
+        if (isset($order['shipping']) && ($order['shipping'] > 0) && isset($order['shipping_name'])) {
+            $vat = 'none';
+
+            if (isset($order['tax_included']) && $order['tax_included']) {
+                $vat = 'vat20';
+            }
+
+            $orderProducts[] = array(
+                'name'     => $order['shipping_name'],
+                'count'    => 1,
+                'price'    => round($order['shipping'], 2),
+                'currency' => $currencyCode,
+                'type'     => 'service',
+                'nds'      => $vat,
+            );
+        }
+
+        return base64_encode(json_encode($orderProducts));
     }
 }
