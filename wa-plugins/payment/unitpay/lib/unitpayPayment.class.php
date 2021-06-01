@@ -27,8 +27,10 @@ class unitpayPayment extends waPayment implements waIPayment
         $sum = $order->total;
         $account = $order->id . unitpayPayment::DELIMITER . $this->merchant_id;
         $desc = $order->description;
+		$currencyCode = $order['currency'];
         $signature = hash('sha256', join('{up}', array(
             $account,
+			$currencyCode,
             $desc,
             $sum,
             $secret_key
@@ -38,6 +40,7 @@ class unitpayPayment extends waPayment implements waIPayment
         $view = wa()->getView();
         $view->assign('domain', $domain);
         $view->assign('public_key', $public_key);
+		$view->assign('currency', $currencyCode);
         $view->assign('sum', $sum);
         $view->assign('account', $account);
         $view->assign('desc', urlencode($desc));
@@ -84,9 +87,10 @@ class unitpayPayment extends waPayment implements waIPayment
     {
         if (!isset($data['params']) || !isset($data['method']) || !isset($data['params']['signature'])) {
             $result = array('error' => array('message' => 'Не переданы обязательные параметры запроса'));
+			
             return $this->returnJson($result);
         }
-
+		
         $params = $data['params'];
         $method = $data['method'];
 
@@ -116,7 +120,7 @@ class unitpayPayment extends waPayment implements waIPayment
     public function pay($params)
     {
         $transaction_data = $this->formalizeData($params);
-
+		
         $transaction_data = $this->saveTransaction($transaction_data, $params);
 
         $result = $this->execAppCallback(self::CALLBACK_PAYMENT, $transaction_data);
@@ -133,7 +137,7 @@ class unitpayPayment extends waPayment implements waIPayment
     {
         $transaction_data = parent::formalizeData($params);
         $transaction_data['order_id'] = $this->order_id;
-        $transaction_data['amount'] = $params['sum'];
+        $transaction_data['amount'] = $params['orderSum'];
         $transaction_data['native_id'] = $params['unitpayId'];
         $transaction_data['type'] = self::OPERATION_CAPTURE;
         $transaction_data['state'] = self::STATE_CAPTURED;
@@ -180,8 +184,8 @@ class unitpayPayment extends waPayment implements waIPayment
         $orderProducts = array_map(function ($item) use ($currencyCode, $order) {
             $vat = 'none';
 
-            if (isset($order['tax_included']) && $order['tax_included']) {
-                $vat = 'vat20';
+            if (isset($item['tax_included']) && $item['tax_included'] && $item['tax_rate'] != "") {
+                $vat = $this->getTaxRates($item['tax_rate']);
             }
 
             return array(
@@ -189,7 +193,7 @@ class unitpayPayment extends waPayment implements waIPayment
                 'count'    => $item['quantity'],
                 'price'    => round($item['price'], 2),
                 'currency' => $currencyCode,
-                'type'     => 'commodity',
+                'type'     => $this->unit_item_type,
                 'nds'      => $vat,
             );
         }, $order['items']);
@@ -197,8 +201,8 @@ class unitpayPayment extends waPayment implements waIPayment
         if (isset($order['shipping']) && ($order['shipping'] > 0) && isset($order['shipping_name'])) {
             $vat = 'none';
 
-            if (isset($order['tax_included']) && $order['tax_included']) {
-                $vat = 'vat20';
+            if (isset($order['shipping_tax_included']) && $order['shipping_tax_included'] && $order['shipping_tax_rate'] != "") {
+                $vat = $this->getTaxRates($order['shipping_tax_rate']);
             }
 
             $orderProducts[] = array(
@@ -212,5 +216,23 @@ class unitpayPayment extends waPayment implements waIPayment
         }
 
         return base64_encode(json_encode($orderProducts));
+    }
+	
+	private function getTaxRates($rate){
+        switch (intval($rate)){
+            case 10:
+                $vat = 'vat10';
+                break;
+            case 20:
+                $vat = 'vat20';
+                break;
+            case 0:
+                $vat = 'vat0';
+                break;
+            default:
+                $vat = 'none';
+        }
+
+        return $vat;
     }
 }
